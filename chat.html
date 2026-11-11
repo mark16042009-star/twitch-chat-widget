@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Twitch Chat Widget</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --font: "Inter";
+    --font-size: 20px;
+    --weight: 500;
+    --text: #ffffff;
+    --bg-msg: rgba(0, 0, 0, 0.45);
+    --radius: 8px;
+    --gap: 6px;
+    --pad: 10px;
+    --accent: #9147ff;
+    --emote: 1.6em;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: transparent; /* прозрачный фон для OBS */
+    overflow: hidden;
+  }
+  body {
+    font-family: var(--font), "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: var(--font-size);
+    font-weight: var(--weight);
+    color: var(--text);
+  }
+  body.shadow .msg { text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+  body.stroke .msg {
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 3px rgba(0,0,0,.8);
+  }
+  #chat {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--gap);
+    padding: var(--pad);
+    box-sizing: border-box;
+    max-height: 100%;
+  }
+  body.order-up #chat { top: 0; bottom: auto; justify-content: flex-start; }
+  body.align-right #chat { text-align: right; align-items: flex-end; }
+  body.align-right .msg { align-self: flex-end; }
+  body.fit .msg { align-self: flex-start; max-width: 100%; }
+  body.fit.align-right .msg { align-self: flex-end; }
+
+  .msg {
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    background: var(--bg-msg);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    transition: opacity .6s ease, transform .6s ease;
+    box-sizing: border-box;
+  }
+  body.layout-stack .name-row { display: block; margin-bottom: 2px; }
+  body.layout-stack .sep { display: none; }
+  body.layout-stack .text { display: block; }
+  body.nocolon .sep { display: none; }
+  body.nocolon .name { margin-right: 6px; }
+
+  body.anim-slide .msg { animation: aSlide .3s ease-out; }
+  body.anim-fade  .msg { animation: aFade .4s ease-out; }
+  body.anim-pop   .msg { animation: aPop .3s cubic-bezier(.2,1.6,.4,1); }
+  body.anim-side  .msg { animation: aSide .35s ease-out; }
+  body.align-right.anim-side .msg { animation-name: aSideR; }
+  @keyframes aSlide { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: none; } }
+  @keyframes aFade  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes aPop   { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+  @keyframes aSide  { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+  @keyframes aSideR { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+
+  .msg.hide { opacity: 0; transform: translateX(-20px); }
+  body.align-right .msg.hide { transform: translateX(20px); }
+  .msg.action .text { font-style: italic; color: var(--user-color); }
+  .msg.highlight { box-shadow: inset 4px 0 0 var(--accent); }
+  .msg.notice {
+    background: color-mix(in srgb, var(--accent) 60%, transparent);
+    font-weight: 700;
+  }
+  .msg.notice .text { font-weight: 400; }
+  .msg.mention { box-shadow: inset 4px 0 0 #ff4646; background: rgba(255, 70, 70, .35); }
+  body.nobg .msg { background: transparent; padding: 2px 4px; }
+  body.nobg .msg.notice { background: transparent; color: var(--accent); }
+
+  .badge {
+    height: 1.1em;
+    vertical-align: -0.2em;
+    margin-right: 4px;
+  }
+  .badge-text {
+    display: inline-block;
+    font-size: .62em;
+    font-weight: 800;
+    padding: 1px 4px;
+    margin-right: 4px;
+    border-radius: 3px;
+    vertical-align: .15em;
+    color: #fff;
+    text-shadow: none;
+  }
+  .name { font-weight: 800; }
+  .sep { margin-right: 6px; }
+  .emote {
+    height: var(--emote);
+    vertical-align: middle;
+    margin: -0.3em 1px;
+  }
+  .text.emote-only .emote { height: calc(var(--emote) * 1.6); margin: 0 2px; }
+  #status {
+    position: absolute; top: 8px; left: 8px;
+    font: 13px/1.3 system-ui, sans-serif; padding: 4px 8px; border-radius: 4px;
+    background: rgba(0,0,0,.6); color: #ccc;
+    transition: opacity 1s;
+  }
+</style>
+</head>
+<body>
+<div id="status">Подключение…</div>
+<div id="chat"></div>
+
+<script>
+(() => {
+  // ================== НАСТРОЙКИ (через URL-параметры) ==================
+  // Удобнее всего собирать ссылку в конфигураторе (index.html)
+  const P = new URLSearchParams(location.search);
+  const num = (k, d) => (P.has(k) && P.get(k) !== "" && !isNaN(+P.get(k)) ? +P.get(k) : d);
+  const bool = (k, d) => (P.has(k) ? !["0", "false", "no", "off"].includes(P.get(k).toLowerCase()) : d);
+  const str = (k, d) => (P.get(k) || d);
+  const hex = (k, d) => { const v = (P.get(k) || "").replace(/^#/, ""); return /^[0-9a-f]{3,8}$/i.test(v) ? "#" + v : d; };
+  const list = (k, d) => (P.has(k) ? P.get(k) : d).toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
+
+  const CFG = {
+    channel:   str("channel", "").toLowerCase().replace(/^#/, "").trim(),
+    // поведение
+    fade:      num("fade", 0),          // скрывать через N секунд (0 — никогда)
+    max:       num("max", 50),          // максимум сообщений на экране
+    badges:    bool("badges", true),
+    emotes3p:  bool("emotes3p", true),  // 7TV / BTTV / FFZ
+    commands:  bool("commands", false), // показывать "!команды"
+    notices:   bool("notices", true),   // подписки, рейды
+    hide:      list("hide", "nightbot,streamelements,moobot,fossabot,wizebot,streamlabs"),
+    demo:      bool("demo", false),
+    // внешний вид
+    font:      str("font", "Inter"),
+    size:      num("size", 20),
+    weight:    num("weight", 500),
+    color:     hex("color", "#ffffff"),
+    bgc:       hex("bgc", "#000000"),
+    bga:       num("bga", bool("bg", true) ? 45 : 0), // прозрачность подложки 0–100
+    radius:    num("radius", 8),
+    gap:       num("gap", 6),
+    pad:       num("pad", 10),
+    accent:    hex("accent", "#9147ff"),
+    namecolor: hex("namecolor", ""),    // единый цвет ников (пусто — цвета из Twitch)
+    emote:     num("emote", 1.6),
+    shadow:    str("shadow", "soft"),   // none | soft | stroke
+    anim:      str("anim", "slide"),    // slide | fade | pop | side | none
+    align:     str("align", "left"),    // left | right
+    order:     str("order", "down"),    // down — новые снизу, up — новые сверху
+    layout:    str("layout", "inline"), // inline | stack (ник на отдельной строке)
+    fit:       bool("fit", false),      // подложка по ширине текста
+    colon:     bool("colon", true),
+  };
+
+  // ---- применяем внешний вид ----
+  const root = document.documentElement.style;
+  const rgba = (h, a) => {
+    let v = h.slice(1); if (v.length === 3) v = [...v].map(c => c + c).join("");
+    const n = parseInt(v.slice(0, 6), 16);
+    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  root.setProperty("--font", `"${CFG.font.replace(/"/g, "")}"`);
+  root.setProperty("--font-size", CFG.size + "px");
+  root.setProperty("--weight", CFG.weight);
+  root.setProperty("--text", CFG.color);
+  root.setProperty("--bg-msg", rgba(CFG.bgc, CFG.bga / 100));
+  root.setProperty("--radius", CFG.radius + "px");
+  root.setProperty("--gap", CFG.gap + "px");
+  root.setProperty("--pad", CFG.pad + "px");
+  root.setProperty("--accent", CFG.accent);
+  root.setProperty("--emote", CFG.emote + "em");
+  const bc = document.body.classList;
+  if (CFG.shadow === "soft") bc.add("shadow");
+  if (CFG.shadow === "stroke") bc.add("stroke");
+  if (CFG.anim !== "none") bc.add("anim-" + CFG.anim);
+  if (CFG.align === "right") bc.add("align-right");
+  if (CFG.order === "up") bc.add("order-up");
+  if (CFG.layout === "stack") bc.add("layout-stack");
+  if (CFG.fit) bc.add("fit");
+  if (!CFG.colon) bc.add("nocolon");
+  if (CFG.bga === 0) bc.add("nobg");
+
+  // Google Fonts (системные шрифты просто не найдутся — это не страшно)
+  const SYSTEM = ["arial", "verdana", "tahoma", "segoe ui", "georgia", "times new roman", "courier new", "impact", "system-ui"];
+  if (!SYSTEM.includes(CFG.font.toLowerCase())) {
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(CFG.font)}:wght@400;500;600;700;800&display=swap`;
+    document.head.appendChild(l);
+  }
+
+  const chatEl = document.getElementById("chat");
+  const statusEl = document.getElementById("status");
+  const setStatus = (t, hideAfter) => {
+    statusEl.textContent = t;
+    statusEl.style.opacity = 1;
+    if (hideAfter) setTimeout(() => (statusEl.style.opacity = 0), hideAfter);
+  };
+
+  // ================== ЗНАЧКИ ==================
+  const BADGE_BASE = "https://static-cdn.jtvnw.net/badges/v1/";
+  const BADGES = {
+    broadcaster: { img: "5527c58c-fb7d-422d-b71b-f309dcb85cc1", label: "СТРИМЕР", color: "#e91916" },
+    moderator:   { img: "3267646d-33f0-4b17-b3df-f923a41db1d0", label: "МОД",     color: "#00ad03" },
+    vip:         { img: "b817aba4-fad8-49e2-b88a-7cc744dfa6ec", label: "VIP",     color: "#e005b9" },
+    subscriber:  { img: "5d9f2208-5dd8-11e7-8513-2ff4adfae661", label: "SUB",     color: "#8205b4" },
+    partner:     { img: "d12a2e27-16f6-41d0-ab77-b780518f00a3", label: "✓",       color: "#9147ff" },
+  };
+
+  // ================== СТОРОННИЕ ЭМОУТЫ ==================
+  const extEmotes = new Map();
+  let extLoadedFor = null;
+  async function fetchJSON(url) {
+    try { const r = await fetch(url); return r.ok ? r.json() : null; } catch { return null; }
+  }
+  async function loadExternalEmotes(roomId) {
+    if (!CFG.emotes3p || extLoadedFor === roomId) return;
+    extLoadedFor = roomId;
+    const add = (code, url) => code && url && extEmotes.set(code, url);
+    const bttvUrl = id => `https://cdn.betterttv.net/emote/${id}/2x`;
+    const [bttvG, bttvC, ffz, stvG, stvC] = await Promise.all([
+      fetchJSON("https://api.betterttv.net/3/cached/emotes/global"),
+      fetchJSON(`https://api.betterttv.net/3/cached/users/twitch/${roomId}`),
+      fetchJSON(`https://api.betterttv.net/3/cached/frankerfacez/users/twitch/${roomId}`),
+      fetchJSON("https://7tv.io/v3/emote-sets/global"),
+      fetchJSON(`https://7tv.io/v3/users/twitch/${roomId}`),
+    ]);
+    (bttvG || []).forEach(e => add(e.code, bttvUrl(e.id)));
+    if (bttvC) [...(bttvC.channelEmotes || []), ...(bttvC.sharedEmotes || [])].forEach(e => add(e.code, bttvUrl(e.id)));
+    (ffz || []).forEach(e => add(e.code, e.images && (e.images["2x"] || e.images["1x"])));
+    const add7tv = set => (set && set.emotes || []).forEach(e => {
+      const host = e.data && e.data.host;
+      if (host) add(e.name, `https:${host.url}/2x.webp`);
+    });
+    add7tv(stvG);
+    add7tv(stvC && stvC.emote_set);
+    console.log(`[chat] сторонних эмоутов загружено: ${extEmotes.size}`);
+  }
+
+  // ================== ПАРСИНГ IRC ==================
+  const unescapeTag = v => v.replace(/\\(.)/g, (_, c) => ({ s: " ", ":": ";", "\\": "\\", r: "\r", n: "\n" }[c] ?? c));
+  function parseIRC(line) {
+    const m = { tags: {}, prefix: "", command: "", params: [] };
+    let i = 0;
+    if (line[0] === "@") {
+      const sp = line.indexOf(" ");
+      line.slice(1, sp).split(";").forEach(kv => {
+        const eq = kv.indexOf("=");
+        m.tags[eq < 0 ? kv : kv.slice(0, eq)] = eq < 0 ? "" : unescapeTag(kv.slice(eq + 1));
+      });
+      i = sp + 1;
+    }
+    if (line[i] === ":") {
+      const sp = line.indexOf(" ", i);
+      m.prefix = line.slice(i + 1, sp);
+      i = sp + 1;
+    }
+    const rest = line.slice(i);
+    const trailIdx = rest.indexOf(" :");
+    const head = trailIdx >= 0 ? rest.slice(0, trailIdx) : rest;
+    const parts = head.split(" ").filter(Boolean);
+    m.command = parts.shift() || "";
+    m.params = parts;
+    if (trailIdx >= 0) m.params.push(rest.slice(trailIdx + 2));
+    return m;
+  }
+
+  // ================== РЕНДЕР ==================
+  const esc = s => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const PALETTE = ["#FF4A4A", "#4A9BFF", "#3CDC5A", "#FF7F50", "#C882FF", "#FFD24A", "#4AE3D9", "#FF69B4"];
+  const fallbackColors = new Map();
+
+  function readableColor(hexColor, login) {
+    if (!hexColor) {
+      if (!fallbackColors.has(login)) fallbackColors.set(login, PALETTE[[...login].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETTE.length]);
+      return fallbackColors.get(login);
+    }
+    const n = parseInt(hexColor.slice(1), 16);
+    let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (lum < 90) { r = Math.min(255, r + 110); g = Math.min(255, g + 110); b = Math.min(255, b + 110); }
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function renderBadges(badgeTag) {
+    if (!CFG.badges || !badgeTag) return "";
+    return badgeTag.split(",").map(b => {
+      const def = BADGES[b.split("/")[0]];
+      if (!def) return "";
+      return `<img class="badge" alt="${def.label}" src="${BADGE_BASE}${def.img}/2"
+        onerror="this.outerHTML='<span class=\\'badge-text\\' style=\\'background:${def.color}\\'>${def.label}</span>'">`;
+    }).join("");
+  }
+
+  // Twitch даёт позиции эмоутов в кодпоинтах, а не в UTF-16
+  function renderText(text, emotesTag) {
+    const chars = Array.from(text);
+    const ranges = [];
+    if (emotesTag) {
+      emotesTag.split("/").forEach(group => {
+        const [id, pos] = group.split(":");
+        if (pos) pos.split(",").forEach(p => {
+          const [s, e] = p.split("-").map(Number);
+          ranges.push({ s, e, id });
+        });
+      });
+      ranges.sort((a, b) => a.s - b.s);
+    }
+    let html = "", cursor = 0, emoteCount = 0, wordCount = 0;
+    const plain = s => s.split(/(\s+)/).map(w => {
+      if (!w) return "";
+      if (/^\s+$/.test(w)) return w;
+      wordCount++;
+      const url = extEmotes.get(w);
+      if (url) { emoteCount++; return `<img class="emote" alt="${esc(w)}" src="${url}">`; }
+      return esc(w);
+    }).join("");
+    for (const r of ranges) {
+      if (r.s < cursor) continue;
+      html += plain(chars.slice(cursor, r.s).join(""));
+      const code = chars.slice(r.s, r.e + 1).join("");
+      html += `<img class="emote" alt="${esc(code)}" src="https://static-cdn.jtvnw.net/emoticons/v2/${r.id}/default/dark/2.0">`;
+      emoteCount++; wordCount++;
+      cursor = r.e + 1;
+    }
+    html += plain(chars.slice(cursor).join(""));
+    return { html, emoteOnly: emoteCount > 0 && emoteCount === wordCount };
+  }
+
+  function addElement(el) {
+    if (CFG.order === "up") {
+      chatEl.prepend(el);
+      while (chatEl.children.length > CFG.max) chatEl.lastElementChild.remove();
+    } else {
+      chatEl.appendChild(el);
+      while (chatEl.children.length > CFG.max) chatEl.firstElementChild.remove();
+    }
+    if (CFG.fade > 0) {
+      setTimeout(() => {
+        el.classList.add("hide");
+        setTimeout(() => el.remove(), 700);
+      }, CFG.fade * 1000);
+    }
+  }
+
+  function addChatMessage(tags, login, text) {
+    if (CFG.hide.includes(login)) return;
+    if (!CFG.commands && text.startsWith("!")) return;
+    let action = false;
+    const am = text.match(/^\u0001ACTION (.*)\u0001$/);
+    if (am) { action = true; text = am[1]; }
+
+    const displayName = tags["display-name"] || login;
+    const color = CFG.namecolor || readableColor(tags.color, login);
+    const { html, emoteOnly } = renderText(text, tags.emotes);
+
+    const el = document.createElement("div");
+    el.className = "msg" + (action ? " action" : "")
+      + (tags["msg-id"] === "highlighted-message" ? " highlight" : "")
+      + (CFG.channel && text.toLowerCase().includes("@" + CFG.channel) ? " mention" : "");
+    el.style.setProperty("--user-color", color);
+    el.dataset.id = tags.id || "";
+    el.dataset.user = tags["user-id"] || login;
+    el.innerHTML =
+      `<span class="name-row">${renderBadges(tags.badges)}<span class="name" style="color:${color}">${esc(displayName)}</span>` +
+      `<span class="sep">${action ? "" : ":"}</span></span>` +
+      `<span class="text${emoteOnly ? " emote-only" : ""}">${html}</span>`;
+    addElement(el);
+  }
+
+  function addNotice(text, extra) {
+    if (!CFG.notices) return;
+    const el = document.createElement("div");
+    el.className = "msg notice";
+    el.innerHTML = esc(text) + (extra ? `<div class="text">${extra}</div>` : "");
+    addElement(el);
+  }
+
+  // ================== ПОДКЛЮЧЕНИЕ К TWITCH ==================
+  let ws, retry = 1000;
+  function handleLine(line) {
+    if (!line) return;
+    const m = parseIRC(line);
+    switch (m.command) {
+      case "PING": ws.send("PONG :" + (m.params[0] || "tmi.twitch.tv")); break;
+      case "001": ws.send("JOIN #" + CFG.channel); break;
+      case "ROOMSTATE":
+        if (m.tags["room-id"]) loadExternalEmotes(m.tags["room-id"]);
+        setStatus(`Подключено к #${CFG.channel}`, 3000);
+        break;
+      case "PRIVMSG": addChatMessage(m.tags, m.prefix.split("!")[0], m.params[1] || ""); break;
+      case "USERNOTICE": {
+        const sys = m.tags["system-msg"];
+        if (sys) addNotice(sys, m.params[1] ? renderText(m.params[1], m.tags.emotes).html : "");
+        break;
+      }
+      case "CLEARCHAT":
+        if (m.tags["target-user-id"]) chatEl.querySelectorAll(`[data-user="${m.tags["target-user-id"]}"]`).forEach(e => e.remove());
+        else chatEl.innerHTML = "";
+        break;
+      case "CLEARMSG":
+        if (m.tags["target-msg-id"]) chatEl.querySelectorAll(`[data-id="${m.tags["target-msg-id"]}"]`).forEach(e => e.remove());
+        break;
+      case "RECONNECT": ws.close(); break;
+    }
+  }
+  function connect() {
+    ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+    ws.onopen = () => {
+      retry = 1000;
+      ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
+      ws.send("PASS SCHMOOPIIE"); // анонимный вход, только чтение
+      ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
+    };
+    ws.onmessage = e => e.data.split("\r\n").forEach(handleLine);
+    ws.onclose = () => {
+      setStatus("Соединение потеряно, переподключение…");
+      setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 30000);
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  // ================== ДЕМО-РЕЖИМ ==================
+  function runDemo() {
+    statusEl.style.opacity = 0;
+    const users = [
+      ["StreamerName", "#9147FF", "broadcaster/1,partner/1"],
+      ["ModeratorBob", "#00AD03", "moderator/1,subscriber/12"],
+      ["vip_anna", "#E005B9", "vip/1"],
+      ["darkuser", "#0A0A20", ""],
+      ["КотикПушистый", "#FF7F50", "subscriber/3"],
+      ["viewer42", "", ""],
+    ];
+    const texts = [
+      ["Всем привет! Kappa", "25:12-16"],
+      ["Отличный стрим сегодня 🔥", ""],
+      ["\u0001ACTION машет рукой\u0001", ""],
+      ["Kappa Kappa Kappa", "25:0-4,6-10,12-16"],
+      ["Это длинное сообщение, чтобы проверить, как виджет переносит текст на несколько строк.", ""],
+      ["@" + (CFG.channel || "streamer") + " как дела?", ""],
+      ["gg wp", ""],
+    ];
+    let i = 0;
+    const one = () => {
+      const [name, color, badges] = users[i % users.length];
+      const [text, emotes] = texts[(i * 3) % texts.length];
+      addChatMessage({ "display-name": name, color, badges, emotes, id: "demo" + i }, name.toLowerCase(), text);
+      if (i % 9 === 8) addNotice(`${name} подписался уровнем 1 на 6 месяцев!`, "Спасибо за стрим!");
+      i++;
+    };
+    for (let k = 0; k < 6; k++) one(); // сразу заполняем экран
+    const tick = () => { one(); setTimeout(tick, 1500 + Math.random() * 2000); };
+    setTimeout(tick, 1500);
+  }
+
+  if (CFG.demo) runDemo();
+  else if (!CFG.channel) setStatus("Укажите канал: chat.html?channel=имя_канала");
+  else connect();
+})();
+</script>
+</body>
+</html>

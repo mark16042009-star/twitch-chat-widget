@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Настройка чата для OBS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e12;
+    --panel: #18181f;
+    --panel-2: #20202a;
+    --line: #2c2c38;
+    --text: #efeff1;
+    --muted: #9a9aab;
+    --accent: #9147ff;
+    --accent-2: #a970ff;
+    --ok: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Inter", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  header .logo {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--accent);
+    display: grid; place-items: center;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    height: calc(100% - 61px);
+  }
+  aside {
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    padding: 16px;
+  }
+  main {
+    display: flex; flex-direction: column;
+    min-width: 0;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  details.sec {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-2);
+    margin-bottom: 10px;
+  }
+  details.sec > summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 11px 14px;
+    font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+    user-select: none;
+  }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec > summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+  details.sec:not([open]) > summary::after { transform: rotate(-90deg); }
+  .sec-body { padding: 4px 14px 14px; display: grid; gap: 12px; }
+
+  .field { display: grid; gap: 6px; }
+  .field > label, .row > label { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .range-wrap { display: flex; align-items: center; gap: 10px; }
+  .range-wrap output { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-size: 13px; }
+
+  input[type=text], input[type=number], select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=color] {
+    width: 42px; height: 30px; padding: 0; border: 1px solid var(--line);
+    border-radius: 6px; background: none; cursor: pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span {
+    position: absolute; inset: 0; border-radius: 22px;
+    background: #3a3a48; cursor: pointer; transition: .2s;
+  }
+  .switch span::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(16px); }
+
+  .seg { display: flex; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+  .seg button {
+    flex: 1; border: 0; background: none; color: var(--muted);
+    padding: 6px 4px; border-radius: 5px; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button.on { background: var(--accent); color: #fff; }
+
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .presets button {
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    border-radius: 7px; padding: 8px 4px; cursor: pointer; font: inherit; font-size: 12.5px;
+  }
+  .presets button:hover { border-color: var(--accent); }
+
+  .hint { color: var(--muted); font-size: 12px; margin: 0; }
+
+  /* --- превью --- */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+  }
+  .toolbar .group { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12.5px; }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 6px; border: 2px solid var(--line); cursor: pointer;
+  }
+  .swatch.on { border-color: var(--accent); }
+  .sw-check { background: repeating-conic-gradient(#3a3a44 0 25%, #2a2a32 0 50%) 0 0/16px 16px; }
+  .sw-game  { background: linear-gradient(135deg, #1e3c72, #2a5298 40%, #6b8e23 70%, #3b5323); }
+  .sw-dark  { background: #111; }
+  .sw-light { background: #e9e9ee; }
+  .sw-green { background: #00b140; }
+
+  .stage {
+    flex: 1;
+    min-height: 300px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+  .stage.bg-check { background: repeating-conic-gradient(#3a3a44 0 25%, #2a2a32 0 50%) 0 0/20px 20px; }
+  .stage.bg-game  { background: linear-gradient(135deg, #1e3c72, #2a5298 40%, #6b8e23 70%, #3b5323); }
+  .stage.bg-dark  { background: #111; }
+  .stage.bg-light { background: #e9e9ee; }
+  .stage.bg-green { background: #00b140; }
+  .frame-box {
+    position: relative;
+    outline: 1px dashed rgba(255,255,255,.35);
+    transform-origin: center;
+  }
+  .frame-box iframe { border: 0; width: 100%; height: 100%; display: block; background: transparent; }
+  .frame-size {
+    position: absolute; top: -22px; left: 0;
+    font-size: 11px; color: rgba(255,255,255,.7);
+    text-shadow: 0 1px 2px #000;
+  }
+
+  .output {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 12px;
+    display: grid; gap: 10px;
+  }
+  .url-row { display: flex; gap: 8px; }
+  .url-row input {
+    font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+    font-size: 12.5px;
+  }
+  .btn {
+    border: 0; border-radius: 7px; padding: 9px 14px;
+    font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+    background: var(--accent); color: #fff;
+  }
+  .btn:hover { background: var(--accent-2); }
+  .btn.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+  .btn.ghost:hover { border-color: var(--accent); }
+  .btn.done { background: var(--ok); }
+  .warn { color: #ffb84d; font-size: 12.5px; margin: 0; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    .stage { min-height: 480px; }
+    .toolbar .group { flex-wrap: wrap; }
+    .url-row { flex-wrap: wrap; }
+    .url-row input { flex: 1 1 100%; }
+    .url-row .btn { flex: 1; }
+    header { padding: 12px 16px; }
+    aside, main { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M4 3h16v11l-5 5h-4l-3 3H6v-3H2V7zm2 2v11h3v2.6L11.6 16H15l3-3V5zm4 3h2v5h-2zm5 0h2v5h-2z"/></svg>
+  </div>
+  <div>
+    <h1>Чат для OBS — настройка</h1>
+    <p>Настройте внешний вид, скопируйте ссылку и вставьте её в источник «Браузер» в OBS</p>
+  </div>
+</header>
+
+<div class="layout">
+  <aside id="panel"></aside>
+
+  <main>
+    <div class="toolbar">
+      <div class="group">
+        Фон превью:
+        <div class="swatch sw-check on" data-bg="check" title="Прозрачный"></div>
+        <div class="swatch sw-game" data-bg="game" title="Игра"></div>
+        <div class="swatch sw-dark" data-bg="dark" title="Тёмный"></div>
+        <div class="swatch sw-light" data-bg="light" title="Светлый"></div>
+        <div class="swatch sw-green" data-bg="green" title="Хромакей"></div>
+      </div>
+      <div class="group">
+        Источник:
+        <input type="number" id="pw" min="200" max="1920" value="450" style="width:76px"> ×
+        <input type="number" id="ph" min="200" max="1080" value="700" style="width:76px">
+        <div class="seg" id="previewMode" style="width:190px">
+          <button data-v="demo" class="on">Демо</button>
+          <button data-v="live">Живой чат</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage bg-check" id="stage">
+      <div class="frame-box" id="frameBox">
+        <span class="frame-size" id="frameSize"></span>
+        <iframe id="preview" title="Превью чата"></iframe>
+      </div>
+    </div>
+
+    <div class="output">
+      <div class="url-row">
+        <input type="text" id="url" readonly>
+        <button class="btn" id="copy">Копировать</button>
+        <button class="btn ghost" id="open">Открыть</button>
+      </div>
+      <p class="warn" id="warn"></p>
+      <p class="hint">OBS → Источники → «+» → «Браузер» → вставьте ссылку в поле URL, ширину и высоту возьмите как выше.
+        Настройки сохраняются в этом браузере автоматически.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+// ================== ОПИСАНИЕ НАСТРОЕК ==================
+// key — имя параметра в URL chat.html, def — значение по умолчанию (как в chat.html)
+const FONTS = ["Inter", "Roboto", "Montserrat", "Nunito", "Rubik", "Exo 2", "Ubuntu", "Fira Sans",
+  "Oswald", "Comfortaa", "Russo One", "Press Start 2P", "JetBrains Mono", "Lobster", "Pacifico", "Arial", "Verdana"];
+
+const SECTIONS = [
+  { title: "Канал", open: true, fields: [
+    { key: "channel", label: "Имя канала Twitch", type: "text", def: "", placeholder: "например, mychannel" },
+    { key: "_preset", label: "Готовые стили", type: "presets" },
+  ]},
+  { title: "Текст", open: true, fields: [
+    { key: "font", label: "Шрифт (любой из Google Fonts)", type: "font", def: "Inter" },
+    { key: "size", label: "Размер", type: "range", def: 20, min: 12, max: 48, step: 1, unit: "px" },
+    { key: "weight", label: "Толщина", type: "seg", def: 500, options: [[400, "Обычный"], [500, "Средний"], [700, "Жирный"]] },
+    { key: "color", label: "Цвет текста", type: "color", def: "#ffffff" },
+    { key: "shadow", label: "Обводка текста", type: "seg", def: "soft", options: [["none", "Нет"], ["soft", "Тень"], ["stroke", "Контур"]] },
+    { key: "emote", label: "Размер смайлов", type: "range", def: 1.6, min: 1, max: 3, step: 0.1, unit: "×" },
+  ]},
+  { title: "Ники и значки", fields: [
+    { key: "_ownNameColor", label: "Один цвет для всех ников", type: "toggle", def: false, local: true },
+    { key: "namecolor", label: "Цвет ников", type: "color", def: "", fallback: "#a970ff", showIf: s => s._ownNameColor },
+    { key: "badges", label: "Значки (стример, модер, VIP, саб)", type: "toggle", def: true },
+    { key: "colon", label: "Двоеточие после ника", type: "toggle", def: true },
+    { key: "layout", label: "Расположение ника", type: "seg", def: "inline", options: [["inline", "В строку"], ["stack", "Над текстом"]] },
+  ]},
+  { title: "Подложка", open: true, fields: [
+    { key: "bgc", label: "Цвет подложки", type: "color", def: "#000000" },
+    { key: "bga", label: "Непрозрачность", type: "range", def: 45, min: 0, max: 100, step: 1, unit: "%" },
+    { key: "radius", label: "Скругление углов", type: "range", def: 8, min: 0, max: 30, step: 1, unit: "px" },
+    { key: "fit", label: "Подложка по ширине текста", type: "toggle", def: false },
+    { key: "accent", label: "Цвет оповещений (подписки, рейды)", type: "color", def: "#9147ff" },
+  ]},
+  { title: "Расположение и анимация", fields: [
+    { key: "order", label: "Новые сообщения", type: "seg", def: "down", options: [["down", "Снизу"], ["up", "Сверху"]] },
+    { key: "align", label: "Выравнивание", type: "seg", def: "left", options: [["left", "Слева"], ["right", "Справа"]] },
+    { key: "anim", label: "Анимация появления", type: "select", def: "slide",
+      options: [["slide", "Выезд снизу"], ["side", "Выезд сбоку"], ["fade", "Проявление"], ["pop", "Пружинка"], ["none", "Без анимации"]] },
+    { key: "gap", label: "Отступ между сообщениями", type: "range", def: 6, min: 0, max: 30, step: 1, unit: "px" },
+    { key: "pad", label: "Отступ от краёв", type: "range", def: 10, min: 0, max: 60, step: 1, unit: "px" },
+    { key: "fade", label: "Скрывать сообщения через", type: "range", def: 0, min: 0, max: 120, step: 5, unit: "с", zero: "никогда" },
+    { key: "max", label: "Максимум сообщений", type: "range", def: 50, min: 5, max: 100, step: 5, unit: "" },
+  ]},
+  { title: "Фильтры", fields: [
+    { key: "emotes3p", label: "Смайлы 7TV / BTTV / FFZ", type: "toggle", def: true },
+    { key: "notices", label: "Подписки, гифты, рейды", type: "toggle", def: true },
+    { key: "commands", label: "Показывать команды (!команда)", type: "toggle", def: false },
+    { key: "hide", label: "Скрытые пользователи (через запятую)", type: "text",
+      def: "nightbot,streamelements,moobot,fossabot,wizebot,streamlabs" },
+  ]},
+];
+
+const PRESETS = {
+  "Классика": {},
+  "Минимал": { bga: 0, shadow: "stroke", weight: 700, size: 22 },
+  "Пузыри": { fit: true, radius: 18, bgc: "#1f1f2e", bga: 85, anim: "pop", gap: 8, shadow: "none" },
+  "Неон": { font: "Russo One", color: "#e0f7ff", bgc: "#0d0221", bga: 80, radius: 0, accent: "#ff00e6",
+            shadow: "none", anim: "side", _ownNameColor: true, namecolor: "#00f0ff", weight: 400 },
+  "Пиксели": { font: "Press Start 2P", size: 14, radius: 0, bgc: "#000000", bga: 70, layout: "stack",
+               colon: false, anim: "none", shadow: "stroke", weight: 400 },
+  "Справа": { align: "right", fit: true, anim: "side", radius: 14 },
+};
+
+// ================== СОСТОЯНИЕ ==================
+const ALL = SECTIONS.flatMap(s => s.fields).filter(f => f.type !== "presets");
+const defaults = () => Object.fromEntries(ALL.map(f => [f.key, f.def]));
+const STORE_KEY = "twitch-chat-config-v1";
+let state = defaults();
+try { Object.assign(state, JSON.parse(localStorage.getItem(STORE_KEY) || "{}")); } catch {}
+let previewMode = "demo";
+let previewBg = "check";
+
+// ================== ПОСТРОЕНИЕ ПАНЕЛИ ==================
+const panel = document.getElementById("panel");
+const inputs = {}; // key -> {el, set(v)}
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  children.flat().forEach(c => c != null && e.append(c));
+  return e;
+}
+
+function buildField(f) {
+  const set = v => { state[f.key] = v; onChange(); };
+  let wrap, setUI;
+  switch (f.type) {
+    case "text": {
+      const i = el("input", { type: "text", placeholder: f.placeholder || "" });
+      i.addEventListener("input", () => set(i.value.trim()));
+      setUI = v => (i.value = v);
+      wrap = el("div", { class: "field" }, el("label", {}, f.label), i);
+      break;
+    }
+    case "font": {
+      const id = "fonts-list";
+      const dl = el("datalist", { id }, FONTS.map(n => el("option", { value: n })));
+      const i = el("input", { type: "text", list: id, placeholder: "Inter" });
+      i.addEventListener("change", () => set(i.value.trim() || f.def));
+      setUI = v => (i.value = v);
+      wrap = el("div", { class: "field" }, el("label", {}, f.label), i, dl);
+      break;
+    }
+    case "range": {
+      const i = el("input", { type: "range", min: f.min, max: f.max, step: f.step });
+      const o = el("output");
+      const show = v => (o.textContent = f.zero && +v === 0 ? f.zero : v + (f.unit ? " " + f.unit : ""));
+      i.addEventListener("input", () => { show(i.value); set(+i.value); });
+      setUI = v => { i.value = v; show(v); };
+      wrap = el("div", { class: "field" }, el("label", {}, f.label), el("div", { class: "range-wrap" }, i, o));
+      break;
+    }
+    case "color": {
+      const i = el("input", { type: "color" });
+      i.addEventListener("input", () => set(i.value));
+      setUI = v => (i.value = v || f.fallback || "#000000");
+      wrap = el("div", { class: "row" }, el("label", {}, f.label), i);
+      break;
+    }
+    case "toggle": {
+      const i = el("input", { type: "checkbox" });
+      i.addEventListener("change", () => {
+        if (f.key === "_ownNameColor") state.namecolor = i.checked ? (state.namecolor || "#a970ff") : "";
+        set(i.checked);
+      });
+      setUI = v => (i.checked = !!v);
+      wrap = el("div", { class: "row" }, el("label", {}, f.label), el("label", { class: "switch" }, i, el("span")));
+      break;
+    }
+    case "seg": {
+      const seg = el("div", { class: "seg" });
+      const btns = f.options.map(([v, t]) => {
+        const b = el("button", { type: "button", onclick: () => set(v) }, t);
+        b.dataset.v = v; seg.append(b); return b;
+      });
+      setUI = v => btns.forEach(b => b.classList.toggle("on", b.dataset.v == String(v)));
+      wrap = el("div", { class: "field" }, el("label", {}, f.label), seg);
+      break;
+    }
+    case "select": {
+      const s = el("select", {}, f.options.map(([v, t]) => el("option", { value: v }, t)));
+      s.addEventListener("change", () => set(s.value));
+      setUI = v => (s.value = v);
+      wrap = el("div", { class: "field" }, el("label", {}, f.label), s);
+      break;
+    }
+    case "presets": {
+      wrap = el("div", { class: "field" }, el("label", {}, f.label),
+        el("div", { class: "presets" }, Object.keys(PRESETS).map(name =>
+          el("button", { type: "button", onclick: () => applyPreset(name) }, name))));
+      return wrap;
+    }
+  }
+  inputs[f.key] = { wrap, setUI, f };
+  return wrap;
+}
+
+SECTIONS.forEach(sec => {
+  const d = el("details", { class: "sec" }, el("summary", {}, sec.title),
+    el("div", { class: "sec-body" }, sec.fields.map(buildField)));
+  if (sec.open) d.open = true;
+  panel.append(d);
+});
+panel.append(el("button", { class: "btn ghost", type: "button", style: "width:100%", onclick: () => {
+  if (confirm("Сбросить все настройки?")) { const ch = state.channel; state = defaults(); state.channel = ch; onChange(); }
+}}, "Сбросить настройки"));
+
+function applyPreset(name) {
+  const ch = state.channel, hide = state.hide;
+  state = Object.assign(defaults(), PRESETS[name], { channel: ch, hide });
+  onChange();
+}
+
+// ================== ССЫЛКА ==================
+function buildParams(extra = {}) {
+  const p = new URLSearchParams();
+  for (const f of ALL) {
+    if (f.local) continue;
+    let v = state[f.key];
+    if (f.key === "namecolor" && !state._ownNameColor) continue;
+    if (v === f.def || v === "" && f.key !== "hide") continue;
+    if (typeof v === "boolean") v = v ? 1 : 0;
+    if (typeof v === "string" && v.startsWith("#")) v = v.slice(1);
+    p.set(f.key, v);
+  }
+  for (const [k, v] of Object.entries(extra)) p.set(k, v);
+  return p.toString();
+}
+const chatUrl = q => new URL("chat.html", location.href).href + (q ? "?" + q : "");
+
+// ================== ОБНОВЛЕНИЕ ==================
+const urlInput = document.getElementById("url");
+const warn = document.getElementById("warn");
+const iframe = document.getElementById("preview");
+let reloadTimer, lastSrc = "";
+
+function onChange() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch {}
+  for (const { wrap, setUI, f } of Object.values(inputs)) {
+    setUI(state[f.key]);
+    if (f.showIf) wrap.style.display = f.showIf(state) ? "" : "none";
+  }
+  const q = buildParams();
+  urlInput.value = chatUrl(q);
+  const w = [];
+  if (!state.channel) w.push("Укажите имя канала — без него чат в OBS не подключится.");
+  if (location.protocol === "file:") w.push("Сайт открыт как локальный файл: после загрузки на хост ссылка станет вида https://ваш-сайт/…/chat.html?…");
+  warn.textContent = w.join(" ");
+  warn.style.display = w.length ? "" : "none";
+
+  const live = previewMode === "live" && state.channel;
+  const src = chatUrl(buildParams(live ? {} : { demo: 1 }));
+  clearTimeout(reloadTimer);
+  if (src !== lastSrc) reloadTimer = setTimeout(() => { lastSrc = src; iframe.src = src; }, 250);
+}
+
+// ================== ПРЕВЬЮ ==================
+const stage = document.getElementById("stage");
+const frameBox = document.getElementById("frameBox");
+const pw = document.getElementById("pw"), ph = document.getElementById("ph");
+try { const s = JSON.parse(localStorage.getItem(STORE_KEY + "-ui") || "{}"); if (s.w) pw.value = s.w; if (s.h) ph.value = s.h; if (s.bg) previewBg = s.bg; } catch {}
+
+function fitFrame() {
+  const w = Math.max(200, +pw.value || 450), h = Math.max(200, +ph.value || 700);
+  frameBox.style.width = w + "px";
+  frameBox.style.height = h + "px";
+  const sw = stage.clientWidth - 40, sh = stage.clientHeight - 50;
+  const k = Math.min(1, sw / w, sh / h);
+  frameBox.style.transform = `scale(${k})`;
+  document.getElementById("frameSize").textContent = `${w}×${h}` + (k < 1 ? ` (масштаб ${Math.round(k * 100)}%)` : "");
+  try { localStorage.setItem(STORE_KEY + "-ui", JSON.stringify({ w, h, bg: previewBg })); } catch {}
+}
+[pw, ph].forEach(i => i.addEventListener("input", fitFrame));
+new ResizeObserver(fitFrame).observe(stage);
+
+function setBg(bg) {
+  previewBg = bg;
+  stage.className = "stage bg-" + bg;
+  document.querySelectorAll(".swatch").forEach(s => s.classList.toggle("on", s.dataset.bg === bg));
+  fitFrame();
+}
+document.querySelectorAll(".swatch").forEach(s => s.addEventListener("click", () => setBg(s.dataset.bg)));
+
+document.querySelectorAll("#previewMode button").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.v === "live" && !state.channel) { alert("Сначала укажите имя канала"); return; }
+  previewMode = b.dataset.v;
+  document.querySelectorAll("#previewMode button").forEach(x => x.classList.toggle("on", x === b));
+  onChange();
+}));
+
+// ================== КНОПКИ ==================
+const copyBtn = document.getElementById("copy");
+copyBtn.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(urlInput.value); }
+  catch { urlInput.select(); document.execCommand("copy"); }
+  copyBtn.textContent = "Скопировано ✓";
+  copyBtn.classList.add("done");
+  setTimeout(() => { copyBtn.textContent = "Копировать"; copyBtn.classList.remove("done"); }, 1500);
+});
+document.getElementById("open").addEventListener("click", () => window.open(urlInput.value, "_blank"));
+
+setBg(previewBg);
+onChange();
+</script>
+</body>
+</html>
