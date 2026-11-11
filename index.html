@@ -331,6 +331,7 @@ const STORE_KEY = "twitch-chat-config-v1";
 let state = defaults();
 try { Object.assign(state, JSON.parse(localStorage.getItem(STORE_KEY) || "{}")); } catch {}
 let previewMode = "demo";
+let relay = false; // сайт открыт с сервера, где работает ретранслятор
 let previewBg = "check";
 
 // ================== ПОСТРОЕНИЕ ПАНЕЛИ ==================
@@ -448,6 +449,7 @@ function buildParams(extra = {}) {
     if (typeof v === "string" && v.startsWith("#")) v = v.slice(1);
     p.set(f.key, v);
   }
+  if (relay) p.set("relay", 1);
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
   return p.toString();
 }
@@ -469,6 +471,7 @@ function onChange() {
   urlInput.value = chatUrl(q);
   const w = [];
   if (!state.channel) w.push("Укажите имя канала — без него чат в OBS не подключится.");
+  if (relay) w.push("✓ Чат идёт через ваш сервер, поэтому блокировки Twitch у провайдера не мешают.");
   if (location.protocol === "file:") w.push("Сайт открыт как локальный файл: после загрузки на хост ссылка станет вида https://ваш-сайт/…/chat.html?…");
   warn.textContent = w.join(" ");
   warn.style.display = w.length ? "" : "none";
@@ -526,6 +529,13 @@ document.getElementById("open").addEventListener("click", () => window.open(urlI
 
 setBg(previewBg);
 onChange();
+// Проверяем, есть ли рядом ретранслятор (server/server.js)
+if (/^https?:$/.test(location.protocol)) {
+  fetch("relay-status", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j && j.relay) { relay = true; onChange(); } })
+    .catch(() => {});
+}
 </script>
 </body>
 </html>

@@ -396,7 +396,10 @@
 
   // ================== ПОДКЛЮЧЕНИЕ К TWITCH ==================
   // server — свой WebSocket-сервер (например, ретранслятор на вашем хосте), по умолчанию — Twitch
-  const SERVER = P.get("server") || "wss://irc-ws.chat.twitch.tv:443";
+  // relay=1 — подключаться через ретранслятор на том же сервере, откуда открыт виджет
+  const RELAY = bool("relay", false) && /^https?:$/.test(location.protocol)
+    ? (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/irc" : "";
+  const SERVER = P.get("server") || RELAY || "wss://irc-ws.chat.twitch.tv:443";
   let ws, retry = 1000, stage = "", watchdog, fails = 0;
   const HINTS = {
     connecting: `Не удаётся соединиться с сервером чата (${new URL(SERVER).host}). Похоже, соединение блокирует провайдер, антивирус, фаервол или VPN. Проверьте, открывается ли чат на twitch.tv в этом же браузере.`,
@@ -445,7 +448,7 @@
   }
   function connect() {
     // при повторных неудачах не затираем подсказку об ошибке
-    if (fails === 0) setStage("connecting", "Соединение с Twitch…"); else stage = "connecting";
+    if (fails === 0) setStage("connecting", RELAY ? "Соединение с вашим сервером…" : "Соединение с Twitch…"); else stage = "connecting";
     let opened = false;
     try { ws = new WebSocket(SERVER); }
     catch (e) { setStatus("⚠ Неверный адрес сервера: " + SERVER); return; }

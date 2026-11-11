@@ -73,3 +73,19 @@ sudo nginx -t && sudo systemctl reload nginx
 Виджет пишет причину в левом верхнем углу:
 - **«Канал не найден»**: впишите имя из ссылки `twitch.tv/имя` латиницей, а не отображаемый ник.
 - **«Не удаётся соединиться с сервером чата»**: соединение с `irc-ws.chat.twitch.tv` блокирует провайдер, антивирус, фаервол или VPN.
+
+## Свой сервер с ретранслятором (VPS)
+
+Если провайдер блокирует Twitch, поставьте виджет на свой VPS (Ubuntu/Debian). Сервер раздаёт сайт и сам подключается к чату Twitch, а ваш компьютер общается только с ним.
+
+Выполните от root в консоли сервера:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mark16042009-star/twitch-chat-widget/main/server/install.sh | bash
+```
+После установки откройте `http://IP-сервера/`. Ссылки для OBS будут вида `http://IP-сервера/chat.html?channel=…&relay=1`.
+
+Для обновления запустите ту же команду ещё раз. Полезные команды:
+```bash
+systemctl status twitch-chat      # состояние
+journalctl -u twitch-chat -f      # журнал
+```
