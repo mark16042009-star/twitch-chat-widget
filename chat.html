@@ -115,7 +115,7 @@
   }
   .text.emote-only .emote { height: calc(var(--emote) * 1.6); margin: 0 2px; }
   #status {
-    position: absolute; top: 8px; left: 8px;
+    position: absolute; top: 8px; left: 8px; right: 8px; width: fit-content; max-width: calc(100% - 16px);
     font: 13px/1.3 system-ui, sans-serif; padding: 4px 8px; border-radius: 4px;
     background: rgba(0,0,0,.6); color: #ccc;
     transition: opacity 1s;
@@ -395,16 +395,37 @@
   }
 
   // ================== ПОДКЛЮЧЕНИЕ К TWITCH ==================
-  let ws, retry = 1000;
+  // server — свой WebSocket-сервер (например, ретранслятор на вашем хосте), по умолчанию — Twitch
+  const SERVER = P.get("server") || "wss://irc-ws.chat.twitch.tv:443";
+  let ws, retry = 1000, stage = "", watchdog, fails = 0;
+  const HINTS = {
+    connecting: `Не удаётся соединиться с сервером чата (${new URL(SERVER).host}). Похоже, соединение блокирует провайдер, антивирус, фаервол или VPN. Проверьте, открывается ли чат на twitch.tv в этом же браузере.`,
+    login: "Сервер чата Twitch не отвечает на вход. Попробуйте позже или отключите VPN или прокси.",
+    joining: `Канал #${CFG.channel} не найден. Нужно имя из ссылки twitch.tv/имя (латиницей), а не отображаемый ник.`,
+  };
+  function setStage(s, text) {
+    stage = s;
+    setStatus(text);
+    clearTimeout(watchdog);
+    if (HINTS[s]) watchdog = setTimeout(() => {
+      if (stage === s) { setStatus("⚠ " + HINTS[s]); console.warn("[chat]", HINTS[s]); }
+    }, 10000);
+  }
   function handleLine(line) {
     if (!line) return;
     const m = parseIRC(line);
     switch (m.command) {
       case "PING": ws.send("PONG :" + (m.params[0] || "tmi.twitch.tv")); break;
-      case "001": ws.send("JOIN #" + CFG.channel); break;
+      case "001":
+        setStage("joining", `Вход в канал #${CFG.channel}…`);
+        ws.send("JOIN #" + CFG.channel);
+        break;
       case "ROOMSTATE":
         if (m.tags["room-id"]) loadExternalEmotes(m.tags["room-id"]);
-        setStatus(`Подключено к #${CFG.channel}`, 3000);
+        if (stage !== "joined") { setStage("joined", ""); setStatus(`Подключено к #${CFG.channel}`, 3000); }
+        break;
+      case "NOTICE": // например, канал заблокирован
+        if (m.params[1]) { setStatus("⚠ Twitch: " + m.params[1]); console.warn("[chat] NOTICE", m.params[1]); }
         break;
       case "PRIVMSG": addChatMessage(m.tags, m.prefix.split("!")[0], m.params[1] || ""); break;
       case "USERNOTICE": {
@@ -423,16 +444,29 @@
     }
   }
   function connect() {
-    ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+    // при повторных неудачах не затираем подсказку об ошибке
+    if (fails === 0) setStage("connecting", "Соединение с Twitch…"); else stage = "connecting";
+    let opened = false;
+    try { ws = new WebSocket(SERVER); }
+    catch (e) { setStatus("⚠ Неверный адрес сервера: " + SERVER); return; }
     ws.onopen = () => {
+      opened = true;
       retry = 1000;
+      fails = 0;
+      setStage("login", "Вход в чат…");
       ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
       ws.send("PASS SCHMOOPIIE"); // анонимный вход, только чтение
       ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
     };
     ws.onmessage = e => e.data.split("\r\n").forEach(handleLine);
     ws.onclose = () => {
-      setStatus("Соединение потеряно, переподключение…");
+      clearTimeout(watchdog);
+      const was = stage;
+      stage = "closed";
+      if (!opened) fails++;
+      setStatus(opened || was !== "connecting"
+        ? "Соединение потеряно, переподключение…"
+        : "⚠ " + HINTS.connecting + " Повтор через " + Math.round(retry / 1000) + " с…");
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, 30000);
     };
